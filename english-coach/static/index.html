@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>English Coach</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.5rem; }
+    nav button { padding: .4rem .8rem; cursor: pointer; border: 1px solid #ccc; background: #f6f6f6; border-radius: 6px; }
+    nav button.active { background: #222; color: #fff; border-color: #222; }
+    nav button.todo { color: #999; }
+    nav button.todo.active { color: #fff; }
+    form { display: flex; gap: .5rem; }
+    input { flex: 1; padding: .6rem; font-size: 1rem; }
+    form button { padding: .6rem 1rem; font-size: 1rem; cursor: pointer; }
+    #answer { white-space: pre-wrap; margin-top: 1.5rem; line-height: 1.5; }
+    #meta { margin-top: 1rem; color: #666; font-size: .85rem; font-family: ui-monospace, monospace; }
+    .error { color: #b00020; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>English Coach</h1>
+  <p class="muted" id="model"></p>
+  <nav id="menu"></nav>
+
+  <section id="panel"></section>
+
+  <script>
+    const menu = document.getElementById("menu");
+    const panel = document.getElementById("panel");
+    let modes = [];
+
+    // Lấy danh sách chế độ từ backend để menu luôn khớp với app.py.
+    async function loadModes() {
+      const res = await fetch("/api/modes");
+      const data = await res.json();
+      modes = data.modes;
+      document.getElementById("model").textContent = `Model: ${data.model}`;
+      menu.innerHTML = "";
+      for (const m of modes) {
+        const b = document.createElement("button");
+        b.textContent = `${m.name} [${m.domains}]`;
+        b.className = m.done ? "" : "todo";
+        b.onclick = () => openMode(m.id);
+        b.dataset.id = m.id;
+        menu.appendChild(b);
+      }
+      openMode(modes[0].id);
+    }
+
+    function openMode(id) {
+      const m = modes.find((x) => x.id === id);
+      for (const b of menu.children) b.classList.toggle("active", b.dataset.id === id);
+      if (!m.done) {
+        panel.innerHTML = `<h2>${m.name}</h2><p class="muted">Chưa làm.</p>`;
+        return;
+      }
+      if (id === "explain") renderExplain();
+    }
+
+    // Chế độ "Giải nghĩa từ" (bản thử). Hiện stop_reason và usage để quan sát đúng thứ đề thi hỏi.
+    function renderExplain() {
+      panel.innerHTML = `
+        <h2>Giải nghĩa từ (bản thử)</h2>
+        <form id="form">
+          <input id="word" placeholder="Nhập một từ hoặc cụm từ, ví dụ: resilient" autofocus>
+          <button>Giải nghĩa</button>
+        </form>
+        <div id="answer"></div>
+        <div id="meta"></div>`;
+      const answer = document.getElementById("answer");
+      const meta = document.getElementById("meta");
+
+      document.getElementById("form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const word = document.getElementById("word").value.trim();
+        if (!word) return;
+        answer.className = "";
+        answer.textContent = "Đang hỏi Claude...";
+        meta.textContent = "";
+        try {
+          const res = await fetch("/api/explain", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ word }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+          answer.textContent = data.text;
+          meta.textContent =
+            `stop_reason: ${data.stop_reason} · input_tokens: ${data.usage.input_tokens} · output_tokens: ${data.usage.output_tokens}`;
+        } catch (err) {
+          answer.className = "error";
+          answer.textContent = err.message;
+        }
+      });
+    }
+
+    loadModes();
+  </script>
+</body>
+</html>
