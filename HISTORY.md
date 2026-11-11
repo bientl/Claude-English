@@ -4,6 +4,43 @@ Mỗi lần tổng hợp thêm một mục mới **ở trên cùng**, ghi timest
 
 ---
 
+## 2026-11-12 00:14 (+07:00): Bước 1 làm dở, chuyển `client.py` sang HTTP thô (không SDK)
+
+**Quy tắc mới (CLAUDE.md mục 2):** người dùng tự viết code. Agent chỉ được tạo/sửa file khi người dùng nói rõ "viết đi", "sửa đi" cho đúng việc đó. Lệnh chung như "làm Bước X" không tính.
+
+**Quyết định của người dùng:** tự viết phần gọi API **không dùng anthropic SDK** để hiểu cơ chế bên dưới.
+- `english-coach/client_sdk.py`: bản dùng SDK, giữ lại để đối chiếu. Đặt tên gạch dưới vì tên có gạch ngang thì Python không `import` được.
+- `english-coach/client.py`: viết lại bằng `urllib`, không phụ thuộc `anthropic`.
+  - `_post()` gửi `POST https://api.anthropic.com/v1/messages` với 3 header `x-api-key`, `anthropic-version: 2023-06-01`, `content-type`.
+  - `response` là dict JSON gốc (`response["stop_reason"]`, không còn `response.stop_reason`).
+  - Hai exception tự định nghĩa: `ApiError` (có `status_code`, `error_type`, `request_id`) cho lỗi HTTP, `ConnectionFailed` cho lỗi mạng/timeout/thiếu key.
+  - **Không còn retry tự động** (SDK từng tự retry 429, 5xx). Retry sẽ tự viết ở Bước 4.
+  - Vẫn giữ: ép UTF-8, đọc `MODEL` từ `CLAUDE_MODEL`, vòng lặp `pause_turn` (tối đa 5 lần), xử lý đủ 7 `stop_reason`.
+- `english-coach/app.py`: bỏ `import anthropic`, bắt `ApiError`/`ConnectionFailed`, đọc `response["stop_reason"]`. Flask bind tường minh `host="127.0.0.1", port=5000`.
+
+**Kiến thức đã học trong phiên**
+- [D2] `max_tokens` là tham số bắt buộc, thiếu thì API trả 400.
+- [D2] `stop_reason == "max_tokens"` là HTTP 200, không phải lỗi. `usage` và `stop_reason` do API trả về.
+- [D2] 401 không retry vì request giữ nguyên thì vẫn lỗi. SDK chỉ retry lỗi kết nối, timeout, 408, 409, 429, 5xx.
+- [D7] Key nằm ở backend, trình duyệt chỉ gọi `/api/...`.
+- Python căn bản cho người đã biết .NET: `import`, `os.environ.get`, `load_dotenv`, class kế thừa `Exception`.
+
+**Lỗi gặp phải:** `'dict' object has no attribute 'stop_reason'`. Nguyên nhân là hai bản `app.py` chạy song song trên cổng 5000, bản cũ còn giữ code cũ trong bộ nhớ. Sửa bằng cách tắt hết tiến trình Python rồi chạy lại một bản.
+
+**Kiểm tra:** dùng mock `client._post` với `app.test_client()` cho ba trường hợp (thành công kèm `max_tokens`, lỗi 401, lỗi kết nối). Cả ba đúng. Người dùng chạy thử chế độ "Giải nghĩa từ" trên web, gặp lỗi ở trên. Chưa xác nhận lại sau khi chạy một bản duy nhất.
+
+**Còn thiếu của Bước 1** (người dùng tự code):
+- Đọc `request-id` và header `anthropic-ratelimit-*-remaining` từ `res.headers`.
+- Đo latency (ms).
+- Hàm `count_tokens()` (Token Counting API) và hiện "ước tính X / thực tế Y token" trên trang.
+- Trả đủ các thông tin trên về `static/index.html`.
+
+**Đang chờ**
+- Câu hỏi đoán trước: người dùng đã trả lời 3 câu (thiếu `max_tokens`: sai; `max_tokens=20`: đúng một nửa; sai key có retry không: đúng). Ghi vào `NOTES_LOI_SAI.md` sau khi xong Bước 1.
+- 3 câu trắc nghiệm của Bước 1 chưa ra.
+
+---
+
 ## 2026-11-11 17:46 (+07:00): kế hoạch mới + Bước 0
 
 **Kế hoạch (CLAUDE.md)**
